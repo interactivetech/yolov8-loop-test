@@ -20,6 +20,7 @@ import time
 from tqdm import tqdm
 from torch.cuda import amp
 
+
 MODEL = Path(SETTINGS['weights_dir']) / 'yolov8n.pt'
 CFG = 'yolov8n.yaml'
 SOURCE = ROOT / 'assets/bus.jpg'
