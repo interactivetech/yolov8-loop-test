@@ -35,7 +35,7 @@ im.convert('RGBA').save(SOURCE_RGBA)  # 4-ch PNG with alpha
 # model = YOLO(CFG)
 # model(SOURCE)
 # args = dict(model='yolov8n.yaml', data='coco128.yaml', device='cpu')
-cfg = yaml_load('/run/determined/workdir/ultralytics/ultralytics/yolo/cfg/default.yaml')
+cfg = yaml_load('/run/determined/workdir/yolov8-loop-test/ultralytics/yolo/cfg/default.yaml')
 pprint(dict(cfg))
 cfg.update(dict(model='yolov8n.pt', imgsz = 128, data='/run/determined/workdir/shared_fs/data/flir-camera-objects-yolo/data.yaml', device=0,epochs=2,batch=64,workers=8))
 trainer = DetectionTrainer(overrides=cfg)
