@@ -1,0 +1,11 @@
+DATA_PATH=/run/determined/workdir/shared_fs/data/flir-camera-objects-yolo
+yolo task=detect \
+  mode=train \
+  model=yolov8n.pt \
+  batch=64 \
+  verbose=True \
+  val=True \
+  data=$DATA_PATH/data.yaml \
+  epochs=2 \
+  imgsz=128 \
+  amp=False
