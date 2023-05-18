@@ -6,33 +6,39 @@ from tqdm import tqdm
 from ultralytics.yolo.utils import (DEFAULT_CFG, LOGGER, ONLINE, RANK, ROOT, SETTINGS, TQDM_BAR_FORMAT, __version__,
                                     callbacks, clean_url, colorstr, emojis, yaml_save)
 
-import cv2
+
 import numpy as np
 import torch
 from PIL import Image
+import argparse
+import torch.distributed as dist
+parser = argparse.ArgumentParser(description='')
+parser.add_argument('--local_rank', default=-1,type=int,help='node rank for dist training')
 
 def train(trainer, world_size, batch_size, RANK):
     '''
     ## _do_train
     '''
+    
     trainer.epoch_time = None
     trainer.epoch_time_start = time.time()
     trainer.train_time_start = time.time()
     nb = len(trainer.train_loader)  # number of batches
     nw = max(round(trainer.args.warmup_epochs * nb), 100)  # number of warmup iterations
     last_opt_step = -1
-    print(f'Image sizes {trainer.args.imgsz} train, {trainer.args.imgsz} val\n'
-                f'Using {trainer.train_loader.num_workers * (world_size or 1)} dataloader workers\n'
-                f"Logging results to {colorstr('bold', trainer.save_dir)}\n"
-                f'Starting training for {trainer.epochs} epochs...')
+    if RANK in (-1, 0):
+        print(f'Image sizes {trainer.args.imgsz} train, {trainer.args.imgsz} val\n'
+                    f'Using {trainer.train_loader.num_workers * (world_size or 1)} dataloader workers\n'
+                    f"Logging results to {colorstr('bold', trainer.save_dir)}\n"
+                    f'Starting training for {trainer.epochs} epochs...')
     if trainer.args.close_mosaic:
         base_idx = (trainer.epochs - trainer.args.close_mosaic) * nb
         trainer.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
     for epoch in range(trainer.start_epoch, trainer.epochs):
         trainer.epoch = epoch
         trainer.model.train()
-        # if RANK != -1:
-        #     trainer.train_loader.sampler.set_epoch(epoch)
+        if RANK != -1:
+            trainer.train_loader.sampler.set_epoch(epoch)
         pbar = enumerate(trainer.train_loader)
         # Update dataloader attributes (optional)
         if epoch == (trainer.epochs - trainer.args.close_mosaic):
@@ -63,9 +69,6 @@ def train(trainer, world_size, batch_size, RANK):
 
             # Forward
             with torch.cuda.amp.autocast(trainer.amp):
-                # """Preprocesses a batch of images by scaling and converting to float."""
-                # batch['img'] = batch['img'].to(trainer.device, non_blocking=True).float() / 255
-                # print("batch['img'] : ",batch['img'].dtype)
                 batch = trainer.preprocess_batch(batch)
                 preds = trainer.model(batch['img'])
                 trainer.loss, trainer.loss_items = trainer.criterion(preds, batch)
@@ -86,7 +89,10 @@ def train(trainer, world_size, batch_size, RANK):
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             loss_len = trainer.tloss.shape[0] if len(trainer.tloss.size()) else 1
             losses = trainer.tloss if loss_len > 1 else torch.unsqueeze(trainer.tloss, 0)
+            # print("losses: ",[i.item() for i in losses])
+            # print("box_loss   cls_loss   dfl_loss")
             if RANK in (-1, 0):
+                # print("--RANK: ",RANK)
                 pbar.set_description(
                     ('%11s' * 2 + '%11.4g' * (2 + loss_len)) %
                     (f'{epoch + 1}/{trainer.epochs}', mem, *losses, batch['cls'].shape[0], batch['img'].shape[-1]))
@@ -109,6 +115,23 @@ def train(trainer, world_size, batch_size, RANK):
 
             if trainer.args.val or final_epoch:
                 trainer.metrics, trainer.fitness = trainer.validate()
+            print("metrics: ",trainer.metrics)
+            # Images  Instances   P R mAP50  mAP50-95
+            '''
+            0 bicycle 2854 1018 0.13627635481182399 0.015345825758399443 0.013432724878911876 0.0061077860924923545
+            1 car 2854 11100 0.4345758515278086 0.2981981981981982 0.2847026227029621 0.13878515318645318
+            2 dog 2854 56 1.0 0.0 0.0 0.0
+            3 person 2854 9379 0.36676974626931835 0.153747734300032 0.13889793836405878 0.04776205043115383
+            '''
+            val_dict = {}
+            val_dict.update(trainer.metrics)
+            for i, c in enumerate(trainer.validator.metrics.ap_class_index):
+                val_dict[f"{trainer.validator.names[c]}_P"]=trainer.validator.metrics.class_result(i)[0]
+                val_dict[f"{trainer.validator.names[c]}_R"]=trainer.validator.metrics.class_result(i)[1]
+                val_dict[f"{trainer.validator.names[c]}_mAP50"]=trainer.validator.metrics.class_result(i)[2]
+                val_dict[f"{trainer.validator.names[c]}_mAP"]=trainer.validator.metrics.class_result(i)[3]
+                # print(i,trainer.validator.names[c], trainer.validator.seen, trainer.validator.nt_per_class[c], trainer.validator.metrics.class_result(i))
+            print("val_dict: ",val_dict)
             trainer.save_metrics(metrics={**trainer.label_loss_items(trainer.tloss), **trainer.metrics, **trainer.lr})
             trainer.stop = trainer.stopper(epoch + 1, trainer.fitness)
 
@@ -148,19 +171,31 @@ def train(trainer, world_size, batch_size, RANK):
 # model.val(data='coco8.yaml', imgsz=32,device='cpu')
 # model(SOURCE)
 
-def main():
+def main(local_rank,world_size):
     '''
     '''
     MODEL_NAME='yolov8s'
-    trainer, world_size, batch_size, RANK = setup_train(MODEL_NAME,
-                           imgsz=128,
+    
+    trainer, world_size, batch_size, RANK = setup_train(
+                           MODEL_NAME,
+                           imgsz=224,
                            data='/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects-yolo/data.yaml',
-                           device=0,
+                           device=local_rank if local_rank !=-1 else 0,
                            epochs=2,
-                           batch=64,
+                           batch=32,
+                           RANK=local_rank,
+                           world_size = world_size if world_size>1 else 1,
                            workers=8)
     train(trainer, world_size, batch_size, RANK)
     
 
 if __name__ == '__main__':
-    main()
+    args= parser.parse_args()
+    args.nprocs = torch.cuda.device_count()
+    if args.local_rank == -1:
+        # Hack, if running normal loop, ignore torch's count of GPUs
+        world_size=1
+    else:
+        world_size = args.nprocs
+    print(args.local_rank,args.nprocs)
+    main(args.local_rank,world_size)
