@@ -21,8 +21,9 @@ from tqdm import tqdm
 from torch.cuda import amp
 
 
-MODEL = Path(SETTINGS['weights_dir']) / 'yolov8n.pt'
-CFG = 'yolov8n.yaml'
+MODEL = Path(SETTINGS['weights_dir']) / 'yolov8s.pt'
+MODEL_NAME='yolov8s'
+CFG = 'yolov8s.yaml'
 SOURCE = ROOT / 'assets/bus.jpg'
 SOURCE_GREYSCALE = Path(f'{SOURCE.parent / SOURCE.stem}_greyscale.jpg')
 SOURCE_RGBA = Path(f'{SOURCE.parent / SOURCE.stem}_4ch.png')
@@ -37,7 +38,7 @@ im.convert('RGBA').save(SOURCE_RGBA)  # 4-ch PNG with alpha
 # args = dict(model='yolov8n.yaml', data='coco128.yaml', device='cpu')
 cfg = yaml_load('/run/determined/workdir/yolov8-loop-test/ultralytics/yolo/cfg/default.yaml')
 pprint(dict(cfg))
-cfg.update(dict(model='yolov8n.pt', imgsz = 128, data='/run/determined/workdir/shared_fs/data/flir-camera-objects-yolo/data.yaml', device=0,epochs=2,batch=64,workers=8))
+cfg.update(dict(model=f'{MODEL_NAME}.pt', imgsz = 128, data='/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects-yolo/data.yaml', device=0,epochs=2,batch=64,workers=8))
 trainer = DetectionTrainer(overrides=cfg)
 print("trainer.device: ",trainer.device)
 # trainer.device = select_device(device='', batch=0)
@@ -49,8 +50,9 @@ Builds dataloaders and optimizer on correct rank process.
 """
 # Model
 RANK=-1
-ckpt = torch.load('yolov8n.pt')
-trainer.model = trainer.get_model(cfg='yolov8n.yaml', weights=ckpt, verbose=RANK == -1)
+
+ckpt = torch.load(f'{MODEL_NAME}.pt')
+trainer.model = trainer.get_model(cfg=f'{MODEL_NAME}.yaml', weights=ckpt, verbose=RANK == -1)
 trainer.model.nc = trainer.data['nc']  # attach number of classes to model
 trainer.model.names = trainer.data['names']  # attach class names to model
 trainer.model.args = trainer.args  # attach hyperparameters to model
