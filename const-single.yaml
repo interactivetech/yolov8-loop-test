@@ -4,31 +4,32 @@ project: YoloV8
 description: "YoloV8 Test"
 
 entrypoint: >-
-  python -m determined.launch.torch_distributed
   python determined_files/model-def-coreapi.py
 
 hyperparameters:
+    model_name: 'yolov8l'
     global_batch_size: 32
-    weight_decay: 0.0
-    learning_rate: 5e-5
-    adam_epsilon: 1e-8
-    warmup_steps: 0
-    epochs: 10
-    gradient_accumulation_steps: 1
-    dataset_name: 'PDS2'
+    imgsz: 224
+    epochs: 20
+    workers: 8
+    mult: False
+    # dataset_name: 'flir-camera-objects'
+    dataset_name: 'x-ray-rheumatology'
 environment:
     image: "determinedai/environments:cuda-11.3-pytorch-1.12-gpu-mpi-e3c3210"
 
 resources:
-    slots_per_trial: 2
+    slots_per_trial: 1
 
 profiling:
   begin_on_batch: 0
   enabled: true
-
+records_per_epoch: 45 # 5760/64
 searcher:
     name: single
-    metric: eval_loss
-    max_length: 15
+    metric: 'metrics/mAP50-95(B)'
+    max_length:
+        epochs: 20
     smaller_is_better: true
+    
 max_restarts: 0

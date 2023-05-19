@@ -1,0 +1,36 @@
+name: yolov8-coreapi-test
+workspace: Andrew
+project: YoloV8
+description: "YoloV8 Test"
+
+entrypoint: >-
+  python -m determined.launch.torch_distributed
+  python determined_files/model-def-coreapi.py
+
+hyperparameters:
+    model_name: 'yolov8l'
+    global_batch_size: 32
+    imgsz: 224
+    epochs: 20
+    workers: 8
+    # dataset_name: 'flir-camera-objects'
+    dataset_name: 'x-ray-rheumatology'
+    mult: True
+environment:
+    image: "determinedai/environments:cuda-11.3-pytorch-1.12-gpu-mpi-e3c3210"
+
+resources:
+    slots_per_trial: 2
+
+profiling:
+  begin_on_batch: 0
+  enabled: true
+records_per_epoch: 45 # 5760/64
+searcher:
+    name: single
+    metric: 'metrics/mAP50-95(B)'
+    max_length:
+        epochs: 20
+    smaller_is_better: true
+    
+max_restarts: 0

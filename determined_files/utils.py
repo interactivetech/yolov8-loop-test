@@ -53,13 +53,13 @@ def check_amp(model):
     f = ROOT / 'assets/bus.jpg'  # image to check
     im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if ONLINE else np.ones((640, 640, 3))
     prefix = colorstr('AMP: ')
-    LOGGER.info(f'{prefix}running Automatic Mixed Precision (AMP) checks with YOLOv8n...')
+    LOGGER.info(f'{prefix}running Automatic Mixed Precision (AMP) checks with YOLOv8 model...')
     try:
         from ultralytics import YOLO
         assert amp_allclose(YOLO('yolov8n.pt'), im)
         LOGGER.info(f'{prefix}checks passed ✅')
     except ConnectionError:
-        LOGGER.warning(f"{prefix}checks skipped ⚠️, offline and unable to download YOLOv8n. Setting 'amp=True'.")
+        LOGGER.warning(f"{prefix}checks skipped ⚠️, offline and unable to download YOLOv8. Setting 'amp=True'.")
     except AssertionError:
         LOGGER.warning(f'{prefix}checks failed ❌. Anomalies were detected with AMP on your system that may lead to '
                        f'NaN losses or zero-mAP results, so AMP will be disabled during training.')
@@ -98,7 +98,7 @@ def setup_optimizer(trainer):
     
 def setup_trainer_and_model(MODEL_NAME,
                            imgsz=None,
-                           data='/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects-yolo/data.yaml',
+                           data=None,
                            device=None,
                            epochs=None,
                            batch=None,
@@ -110,14 +110,34 @@ def setup_trainer_and_model(MODEL_NAME,
     cfg = yaml_load('/run/determined/workdir/ultralytics/yolo/cfg/default.yaml')
     # print("DEFAULT DICT")
     # pprint(dict(cfg))
-    cfg.update(dict(model=f'{MODEL_NAME}.pt', 
-                    imgsz = imgsz, 
-                    data=data, 
-                    device=device,
-                    epochs=epochs,
-                    batch=batch,
-                    workers=workers))
-    trainer = DetectionTrainer(overrides=cfg)
+    '''
+    5/18/2023 (Andrew) : Bad hack
+    We dont want DDP (hence RANK=-1) but we want to use CUDA for training
+    Set device to 0 temporarily to initalize model correctly, then 
+    reset back to -1 to not do DDP training
+    '''
+    if device == -1:
+        # HACK: Keep rank -1 to prevent DDP from training, but allow GPU
+        device=0
+        cfg.update(dict(model=f'{MODEL_NAME}.pt', 
+                imgsz = imgsz, 
+                data=data, 
+                device=device,
+                epochs=epochs,
+                batch=batch,
+                workers=workers))
+        trainer = DetectionTrainer(overrides=cfg)
+        device=-1
+    else:
+        cfg.update(dict(model=f'{MODEL_NAME}.pt', 
+                        imgsz = imgsz, 
+                        data=data, 
+                        device=device,
+                        epochs=epochs,
+                        batch=batch,
+                        workers=workers))
+        trainer = DetectionTrainer(overrides=cfg)
+    print("--RANK: ",RANK)
     print("world_size: ",world_size)
     if world_size > 1:
                 trainer._setup_ddp(world_size)
@@ -136,7 +156,10 @@ def setup_trainer_and_model(MODEL_NAME,
     trainer.model.nc = trainer.data['nc']  # attach number of classes to model
     trainer.model.names = trainer.data['names']  # attach class names to model
     trainer.model.args = trainer.args  # attach hyperparameters to model
-    trainer.model = trainer.model.to(trainer.device)
+    if device == -1:
+        trainer.model = trainer.model.to('cuda:0')
+    else:
+        trainer.model = trainer.model.to(trainer.device)
     # trainer.amp = torch.tensor(trainer.args.amp).to(trainer.device)  # True or False
     # Check AMP
     trainer.amp = torch.tensor(trainer.args.amp).to(trainer.device)  # True or False
@@ -158,7 +181,7 @@ def setup_trainer_and_model(MODEL_NAME,
     
 def setup_train(MODEL_NAME,
                imgsz=128,
-               data='/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects-yolo/data.yaml',
+               data=None,
                device=None,
                epochs=None,
                batch=None,
@@ -170,7 +193,7 @@ def setup_train(MODEL_NAME,
     # RANK=-1
     trainer = setup_trainer_and_model(MODEL_NAME,
                                        imgsz=128,
-                                       data='/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects-yolo/data.yaml',
+                                       data=data,
                                        device=device,
                                        epochs=epochs,
                                        batch=batch,
@@ -178,7 +201,7 @@ def setup_train(MODEL_NAME,
                                        world_size=world_size,
                                        workers=workers)
 
-
+    
     trainer.stopper, trainer.stop = EarlyStopping(patience=trainer.args.patience), False
 
     # dataloaders
