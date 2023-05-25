@@ -291,7 +291,7 @@ def main(local_rank,
             if latest_checkpoint is not None:
                 print("Loading Checkpoint")
                 model_ckpt, epoch = load_state(latest_checkpoint, trial_id,core_context)
-                print("model_ckpt keys: ",model_ckpt.keys())
+                # print("model_ckpt keys: ",model_ckpt.keys())
                 trainer.start_epoch = epoch
                 # trainer.model = trainer.model.load_state_dict(model_ckpt)
                 try:
