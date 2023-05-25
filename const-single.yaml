@@ -9,7 +9,7 @@ entrypoint: >-
 hyperparameters:
     model_name: 'yolov8n'
     global_batch_size: 32
-    imgsz: 64
+    imgsz: 224
     epochs: 10
     workers: 8
     mult: False

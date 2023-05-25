@@ -221,9 +221,9 @@ def train(core_context,
                 # NEW: Report progress only on rank 0.
                 op.report_progress(epoch)
                 # 7b.check for pre-emption signal
-                if core_context.preempt.should_preempt():
-                    print("Preemption Signal Detected, stopping training...")
-                    return
+            if core_context.preempt.should_preempt():
+                print("Preemption Signal Detected, stopping training...")
+                return
                 
 
             tnow = time.time()
