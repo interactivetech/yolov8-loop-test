@@ -293,7 +293,23 @@ def main(local_rank,
                 model_ckpt, epoch = load_state(latest_checkpoint, trial_id,core_context)
                 print("model_ckpt keys: ",model_ckpt.keys())
                 trainer.start_epoch = epoch
-                trainer.model = trainer.model.load_state_dict(model_ckpt)
+                # trainer.model = trainer.model.load_state_dict(model_ckpt)
+                try:
+                    trainer.model.load_state_dict(model_ckpt)
+                except Exception:
+                    # If the checkpointed model is non-DDP and the current model is DDP, append
+                    # module prefix to the checkpointed data
+                    if isinstance(trainer.model, torch.nn.parallel.DistributedDataParallel):
+                        print("Loading non-DDP checkpoint into a DDP model.")
+                        self._add_prefix_in_state_dict_if_not_present(model_ckpt, "module.")
+                    else:
+                        # If the checkpointed model is DDP and if we are currently running in
+                        # single-slot mode, remove the module prefix from checkpointed data
+                        print("Loading DDP checkpoint into a non-DDP model.")
+                        torch.nn.modules.utils.consume_prefix_in_state_dict_if_present(
+                            model_ckpt, "module."
+                        )
+                    trainer.model.load_state_dict(model_ckpt)
                 print("Model Loaded")
             train(core_context,
                   trainer, 
