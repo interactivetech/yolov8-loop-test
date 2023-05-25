@@ -292,7 +292,8 @@ def main(local_rank,
                 print("Loading Checkpoint")
                 model_ckpt, epoch = load_state(latest_checkpoint, trial_id,core_context)
                 trainer.start_epoch = epoch
-                trainer.model = YOLO(model_ckpt)
+                trainer.model = trainer.model.load_state_dict(model_ckpt)
+                print("Model Loaded")
             train(core_context,
                   trainer, 
                   core_context.distributed.size, 
