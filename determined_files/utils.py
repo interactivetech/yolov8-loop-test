@@ -22,7 +22,6 @@ from torch.cuda import amp
 from torch.distributed import init_process_group,destroy_process_group
 import datetime
 import torch.distributed as dist
-
 def check_amp(model):
     """
     This function checks the PyTorch Automatic Mixed Precision (AMP) functionality of a YOLOv8 model.
@@ -150,8 +149,9 @@ def setup_trainer_and_model(MODEL_NAME,
     Builds dataloaders and optimizer on correct rank process.
     """
     # Model
-
     ckpt = torch.load(f'{MODEL_NAME}.pt')
+    trainer.start_epoch = 0
+    
     trainer.model = trainer.get_model(cfg=f'{MODEL_NAME}.yaml', weights=ckpt, verbose=RANK == -1)
     trainer.model.nc = trainer.data['nc']  # attach number of classes to model
     trainer.model.names = trainer.data['names']  # attach class names to model

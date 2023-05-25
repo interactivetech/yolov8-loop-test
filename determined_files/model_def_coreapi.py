@@ -9,7 +9,7 @@ from tqdm import tqdm
 from ultralytics.yolo.utils import (DEFAULT_CFG, LOGGER, ONLINE, RANK, ROOT, SETTINGS, TQDM_BAR_FORMAT, __version__,
                                     callbacks, clean_url, colorstr, emojis, yaml_save)
 from ultralytics.yolo.utils.downloads import attempt_download_asset
-
+import torch.nn as nn
 
 import numpy as np
 import torch
@@ -17,13 +17,55 @@ from PIL import Image
 import argparse
 import torch.distributed as dist
 import os
-def load_state(checkpoint_directory, trial_id):
-    '''
-    '''
+from ultralytics import YOLO
 
-def save_state(checkpoint_directory, trial_id):
+def is_parallel(model):
+    '''
+    return if model is DataParallel (DP) or DistributedDataParallel (DDP)
+    '''
+    return type(model) in (nn.DataParallel, nn.parallel.DistributedDataParallel)
+
+def de_parallelize_model(model):
+    '''
+    De-parallelize model: return a single GPU model if model is of type DP or DDP
+    '''
+    return model.module if is_parallel(model) else model
+
+def load_state(latest_checkpoint, trial_id,core_context):
     '''
     '''
+    with core_context.checkpoint.restore_path(latest_checkpoint) as path:
+            ckpt = torch.load(os.path.join(path,'last.pt'),map_location='cpu')
+            model_ckpt = ckpt['model']
+            epoch= ckpt['epoch']
+            # self.epoch = ckpt['epoch']+1
+            # self.losses = ckpt['losses']
+            # self.val_losses = ckpt['val_losses']
+            # self.train_accs = ckpt['train_accs']
+            # self.val_accs = ckpt['val_accs']
+            # self.model.load_state_dict(ckpt['model'])#ToDo load DP or DDP
+            # self.model.to(self.gpu_id)
+            # # get optimizer
+            # self.optimizer = get_optimizer(self.model)
+            # self.optimizer.load_state_dict(ckpt['optimizer'])
+            # print("Resuming Epoch {}".format(self.epoch))
+            return model_ckpt, epoch
+
+def save_state(model,
+               core_context, 
+               trial_id, 
+               epochs_completed):
+    '''
+    '''
+    ckpt_metadata = {"steps_completed":epochs_completed+1}
+        # 8. Save checkpoint
+    with core_context.checkpoint.store_path(ckpt_metadata) as (checkpoint_directory,uuid):
+        ckpt = {
+            'epoch': epochs_completed,
+            'model': de_parallelize_model(model).state_dict()
+        }
+        torch.save(ckpt,os.path.join(checkpoint_directory,'last.pt'))
+    del ckpt    
 
 
 def test():
@@ -33,7 +75,12 @@ def test():
 
 
 
-def train(core_context,trainer, world_size, batch_size, RANK):
+def train(core_context,
+          trainer, 
+          world_size, 
+          batch_size, 
+          RANK,
+          trial_id):
     '''
     ## _do_train
     '''
@@ -55,7 +102,7 @@ def train(core_context,trainer, world_size, batch_size, RANK):
             base_idx = (trainer.epochs - trainer.args.close_mosaic) * nb
             trainer.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
     
-        for epoch in range(op.length):
+        for epoch in range(trainer.start_epoch,op.length):
         # for epoch in range(trainer.start_epoch, trainer.epochs):
             trainer.epoch = epoch
             trainer.model.train()
@@ -167,8 +214,17 @@ def train(core_context,trainer, world_size, batch_size, RANK):
                     trainer.save_model()
                     # trainer.run_callbacks('on_model_save')
                 
+                save_state(trainer.model,
+                   core_context, 
+                   trial_id, 
+                   epoch)
                 # NEW: Report progress only on rank 0.
                 op.report_progress(epoch)
+                # 7b.check for pre-emption signal
+                if core_context.preempt.should_preempt():
+                    print("Preemption Signal Detected, stopping training...")
+                    return
+                
 
             tnow = time.time()
             trainer.epoch_time = tnow - trainer.epoch_time_start
@@ -203,7 +259,11 @@ def train(core_context,trainer, world_size, batch_size, RANK):
 # model.val(data='coco8.yaml', imgsz=32,device='cpu')
 # model(SOURCE)
 
-def main(local_rank,world_size,hparams):
+def main(local_rank,
+         world_size,
+         hparams,
+         latest_checkpoint,
+         trial_id):
     '''
     '''
     MODEL_NAME=hparams['model_name']
@@ -228,15 +288,32 @@ def main(local_rank,world_size,hparams):
         with det.core.init(distributed=distributed) as core_context:
             print("core_context.distributed.size: ",core_context.distributed.size)
             print("core_context.distributed.rank: ",core_context.distributed.rank)
-
-            train(core_context,trainer, core_context.distributed.size, batch_size, core_context.distributed.rank)
+            if latest_checkpoint is not None:
+                print("Loading Checkpoint")
+                model_ckpt, epoch = load_state(latest_checkpoint, trial_id,core_context)
+                trainer.start_epoch = epoch
+                trainer.model = YOLO(model_ckpt)
+            train(core_context,
+                  trainer, 
+                  core_context.distributed.size, 
+                  batch_size, 
+                  core_context.distributed.rank,
+                  trial_id)
     else:
         
         with det.core.init(distributed=None) as core_context:
             # print("core_context.distributed.size: ",core_context.distributed.size)
             # print("core_context.distributed.rank: ",core_context.distributed.rank)
-
-            train(core_context,trainer, core_context.distributed.size, batch_size, RANK)
+            if latest_checkpoint is not None:
+                print("Loading Checkpoint")
+                model_ckpt, epoch = load_state(latest_checkpoint, trial_id,core_context)
+                trainer.start_epoch = epoch
+            train(core_context,
+                  trainer, 
+                  core_context.distributed.size, 
+                  batch_size, 
+                  RANK,
+                  trial_id)
     
 
 if __name__ == '__main__':
@@ -246,7 +323,14 @@ if __name__ == '__main__':
     print(info)
     print("info.trial.trial_id: ",info.trial.trial_id)
     hparams = info.trial.hparams
+    
     print("hparams: ",hparams)
+    assert info is not None, "this example only runs on-cluster"
+    latest_checkpoint = info.latest_checkpoint
+    if latest_checkpoint is None:
+        print("latest_checkpoint None: ",latest_checkpoint)
+    else:
+        print("latest_checkpoint: ",latest_checkpoint)
     '''
     5/19/23    Limitation - Need to know number of epochs before hand to do learning rate warmup
     '''
@@ -267,6 +351,6 @@ if __name__ == '__main__':
     # else:
     #     world_size = nprocs
     print(local_rank,nprocs)
-    main(local_rank,nprocs,hparams)
+    main(local_rank,nprocs,hparams,latest_checkpoint,info.trial.trial_id)
 # if __name__ == "__main__":
 #         main(local_rank,world_size)
