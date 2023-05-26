@@ -8,19 +8,19 @@ entrypoint: >-
   python determined_files/model_def_coreapi.py
 
 hyperparameters:
-    model_name: 'yolov8l'
-    global_batch_size: 64
-    imgsz: 224
+    model_name: 'yolov8n'
+    global_batch_size: 32
+    imgsz: 256
     epochs: 10
     workers: 8
-    # dataset_name: 'flir-camera-objects'
-    dataset_name: 'x-ray-rheumatology'
+    dataset_name: 'flir-camera-objects'
+    # dataset_name: 'x-ray-rheumatology'
     mult: True
 environment:
     image: "determinedai/environments:cuda-11.3-pytorch-1.12-gpu-mpi-e3c3210"
 
 resources:
-    slots_per_trial: 8
+    slots_per_trial: 2
 
 profiling:
   begin_on_batch: 0
@@ -31,6 +31,6 @@ searcher:
     metric: 'metrics/mAP50-95(B)'
     max_length:
         epochs: 10
-    smaller_is_better: true
+    smaller_is_better: false
     
 max_restarts: 0
