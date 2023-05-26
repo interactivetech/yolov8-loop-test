@@ -9,7 +9,7 @@ entrypoint: >-
 
 hyperparameters:
     model_name: 'yolov8l'
-    global_batch_size: 32
+    global_batch_size: 64
     imgsz: 224
     epochs: 10
     workers: 8
@@ -20,7 +20,7 @@ environment:
     image: "determinedai/environments:cuda-11.3-pytorch-1.12-gpu-mpi-e3c3210"
 
 resources:
-    slots_per_trial: 2
+    slots_per_trial: 8
 
 profiling:
   begin_on_batch: 0

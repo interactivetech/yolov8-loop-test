@@ -7,7 +7,7 @@ entrypoint: >-
   python determined_files/model_def_coreapi.py
 
 hyperparameters:
-    model_name: 'yolov8n'
+    model_name: 'yolov8l'
     global_batch_size: 32
     imgsz: 224
     epochs: 10

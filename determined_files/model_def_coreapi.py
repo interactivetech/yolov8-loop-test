@@ -123,7 +123,7 @@ def train(core_context,
             trainer.tloss = None
             trainer.optimizer.zero_grad()
             for i, batch in pbar:
-                # self.run_callbacks('on_train_batch_start')
+                trainer.run_callbacks('on_train_batch_start')
                 # Warmup
                 ni = i + nb * epoch
                 if ni <= nw:
@@ -179,7 +179,7 @@ def train(core_context,
                     if trainer.args.plots and ni in trainer.plot_idx:
                         trainer.plot_training_samples(batch, ni)
 
-                # self.run_callbacks('on_train_batch_end')
+                trainer.run_callbacks('on_train_batch_end')
 
             trainer.lr = {f'lr/pg{ir}': x['lr'] for ir, x in enumerate(trainer.optimizer.param_groups)}  # for loggers
 
