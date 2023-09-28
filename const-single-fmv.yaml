@@ -1,0 +1,38 @@
+name: yolov8-coreapi-fmv
+workspace: Tiger Team
+project: Real Time Object Detection
+description: "YoloV8 Real Time Object Detection"
+
+bind_mounts:
+  - container_path: /run/determined/workdir
+    host_path: /datasets/
+entrypoint: >-
+  python determined_files/model_def_coreapi.py
+
+hyperparameters:
+    model_name: 'yolov8l'
+    global_batch_size: 32
+    imgsz: 224
+    epochs: 10
+    workers: 8
+    mult: False
+    # dataset_name: 'flir-camera-objects'
+    dataset_name: 'fmv'
+environment:
+    image: "determinedai/environments:cuda-11.3-pytorch-1.12-gpu-mpi-e3c3210"
+
+resources:
+    slots_per_trial: 1
+
+profiling:
+  begin_on_batch: 0
+  enabled: true
+records_per_epoch: 45 # 5760/64
+searcher:
+    name: single
+    metric: 'metrics/mAP50-95(B)'
+    max_length:
+        epochs: 10
+    smaller_is_better: False
+    
+max_restarts: 0

@@ -270,7 +270,9 @@ def main(local_rank,
     attempt_download_asset(MODEL_NAME+'.pt')
     dname_to_path = {
      'x-ray-rheumatology':'/run/determined/workdir/shared_fs/andrew-demo-revamp/x-ray-rheumatology/data.yaml',
-     'flir-camera-objects': '/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects/data.yaml'
+     'flir-camera-objects': '/run/determined/workdir/shared_fs/andrew-demo-revamp/flir-camera-objects/data.yaml',
+     'fmv': '/run/determined/workdir/datasets/virat-aerial-156-frames-v2-coco-yolov5/data.yaml'
+
     }
     trainer, world_size, batch_size, RANK = setup_train(
                            MODEL_NAME,
